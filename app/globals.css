@@ -1,0 +1,21 @@
+/* app/globals.css */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif:wght@400;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Noto Serif', serif;
+}
+
+.page {
+  padding: 80px 5% 4% 5%; /* Top padding cố định */
+}
+
+.chapter-title {
+  margin-top: -40px; /* Pull title lên để không tạo khoảng trống thừa */
+}
+.search-box:focus::placeholder {
+  opacity: 0;
+}
