@@ -12,35 +12,29 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
 });
 
-const AI_ROUTER_SYSTEM_PROMPT = `Phân loại câu hỏi tìm kiếm Kinh Thánh và tối ưu query.
+const AI_ROUTER_SYSTEM_PROMPT = `Phân loại câu hỏi Kinh Thánh. TRẢ VỀ JSON.
 
-LOẠI TÌM KIẾM:
-- exact: Có tên sách + số (VD: "Thi thiên 23", "Giăng 3:16")
-- semantic: Chủ đề/cảm xúc chung (VD: "cô đơn", "Tại sao người tốt khổ?")
-- scoped: Tìm trong sách cụ thể (VD: "tình yêu trong Giăng")
+TỪ CHỐI CHỈ KHI:
+- Toán học/Khoa học thuần túy (tam giác, tích phân, hóa học, vật lý)
+- Tin tức/Chính trị/Thể thao (World Cup, bầu cử, bóng đá)
+- Game/Giải trí (Liên Quân, phim, nhạc pop)
+- Công nghệ/Lập trình (code Python, AI, algorithm)
+- Nấu ăn/Y tế cụ thể (công thức món ăn, triệu chứng bệnh)
+- Câu vô nghĩa (asdfgh, gibberish)
 
-LÀM RÕ QUERY (semantic/scoped):
-Mục tiêu: Từ khóa giúp vector search tìm câu Kinh Thánh đúng nhất.
+CHẤP NHẬN:
+- BẤT KỲ câu hỏi nào về: đức tin, Chúa, Kinh Thánh, đời sống tâm linh, đạo đức, cảm xúc, tình huống sống, triết học nhân sinh
 
-Quy tắc:
-1. Giữ chủ đề chính + thêm ngữ cảnh Kinh Thánh
-2. Cảm xúc → thêm "Chúa [can thiệp]"
-   "cô đơn" → "cô đơn, Chúa ở cùng, an ủi"
-3. Câu hỏi triết học → khái niệm thần học
-   "Tại sao người tốt khổ?" → "người công chính khổ đau, thử thách, kế hoạch Chúa"
-4. "Làm sao" → hành động + đức tính
-   "Làm sao tha thứ?" → "tha thứ, yêu kẻ thù, lòng thương xót"
-5. Mô tả mơ hồ → nhận diện nhân vật/sự kiện
-   "Con cá nuốt người" → "Giô-na, cá lớn nuốt"
-6. Tối đa 12 từ, ngắn gọn
+PHÂN LOẠI:
+- exact: Tham chiếu trực tiếp
+- semantic: Các câu hỏi liên quan Kinh Thánh
+- scoped: Trong sách cụ thể
+- invalid: CHỈ khi thuộc danh sách TỪ CHỐI
 
-VÍ DỤ:
-"Thi thiên 23" → {"searchType":"exact","bookCode":"PSA","chapter":23}
-"cô đơn" → {"searchType":"semantic","clarifiedQuery":"cô đơn, Chúa ở cùng, an ủi"}
-"tình yêu trong Giăng" → {"searchType":"scoped","clarifiedQuery":"tình yêu, yêu thương Chúa","bookCode":"JHN","bookName":"Giăng"}
+LÀM RÕ QUERY: Thêm ngữ cảnh, tối đa 12 từ.
 
 TRẢ VỀ JSON:
-{"searchType":"exact|semantic|scoped","clarifiedQuery":"...","bookCode":"...","bookName":"...","chapter":...}`;
+{"searchType":"exact|semantic|scoped|invalid","clarifiedQuery":"...","bookCode":"...","chapter":...}`;
 
 export async function POST(request: NextRequest) {
   console.log('\n========== NEW SEARCH REQUEST ==========');
@@ -49,25 +43,21 @@ export async function POST(request: NextRequest) {
   const stream = new TransformStream();
   const writer = stream.writable.getWriter();
   
-  // Helper: Stream message
   const sendMessage = async (message: string) => {
     console.log('[Stream]', message);
     await writer.write(encoder.encode(`data: ${JSON.stringify({ message })}\n\n`));
   };
   
-  // Helper: Stream result
   const sendResult = async (result: any) => {
     console.log('[Stream] Sending result:', result.type);
     await writer.write(encoder.encode(`data: ${JSON.stringify({ result })}\n\n`));
   };
   
-  // Helper: Stream error
   const sendError = async (error: string) => {
     console.error('[Stream] Error:', error);
     await writer.write(encoder.encode(`data: ${JSON.stringify({ error })}\n\n`));
   };
   
-  // Start processing in background
   (async () => {
     try {
       const body = await request.json();
@@ -81,14 +71,9 @@ export async function POST(request: NextRequest) {
       
       console.log('[Input] User query:', query);
       
-      // ĐỒNG THỜI: Stream message + Call AI
-      console.log('[Parallel] Starting stream + AI router...');
-      
       const [_, aiResponse] = await Promise.all([
-        // Task 1: Stream ngay lập tức (không chờ)
-        sendMessage('Tôi sẽ bắt đầu tìm hiểu vấn đề của bạn...'),
+        sendMessage('Đang phân tích câu hỏi của bạn...'),
         
-        // Task 2: Call AI router (chạy song song)
         openai.chat.completions.create({
           model: 'gpt-4o-mini',
           messages: [
@@ -105,10 +90,22 @@ export async function POST(request: NextRequest) {
       
       const { searchType, clarifiedQuery, bookCode, chapter } = decision;
       
-      // Execute based on decision
+      // XỬ LÝ TỪ CHỐI
+      if (searchType === 'invalid') {
+        await sendMessage('Hmm... câu hỏi này không nằm trong phạm vi Kinh Thánh');
+        await new Promise(resolve => setTimeout(resolve, 400));
+        
+        await sendError(
+          'Tôi chỉ có thể tìm Lời Chúa về: cảm xúc, tình huống sống, đạo đức, nhân vật Kinh Thánh, hoặc triết học nhân sinh. Thử hỏi điều khác nhé! 😊'
+        );
+        await writer.close();
+        return;
+      }
+      
+      // XỬ LÝ CÁC LOẠI TÌM KIẾM HỢP LỆ
       if (searchType === 'exact') {
         if (!bookCode || !chapter) {
-          throw new Error('AI router thiếu bookCode hoặc chapter cho exact search');
+          throw new Error('AI router thiếu bookCode hoặc chapter');
         }
         
         await sendMessage('Đây là đoạn Kinh Thánh mà bạn cần');
@@ -124,7 +121,7 @@ export async function POST(request: NextRequest) {
         
       } else if (searchType === 'scoped') {
         if (!bookCode) {
-          throw new Error('AI router thiếu bookCode cho scoped search');
+          throw new Error('AI router thiếu bookCode');
         }
         
         const queryToUse = clarifiedQuery || query;
@@ -151,7 +148,6 @@ export async function POST(request: NextRequest) {
     }
   })();
   
-  // Return streaming response
   return new Response(stream.readable, {
     headers: {
       'Content-Type': 'text/event-stream',
