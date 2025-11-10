@@ -26,6 +26,8 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [hasSearched, setHasSearched] = useState(false);
+  const [streamMessages, setStreamMessages] = useState<string[]>([]);
+  const [isStreaming, setIsStreaming] = useState(false);
 
   const handleSearch = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -35,24 +37,79 @@ export default function HomePage() {
     setLoading(true);
     setError('');
     setResults([]);
+    setStreamMessages([]);
+    setIsStreaming(true);
+    setHasSearched(false);
     
     try {
-      const response = await fetch('/api/search', {
+      const response = await fetch('/api/search-ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, limit: 3 }),
+        body: JSON.stringify({ query }),
       });
       
       if (!response.ok) {
         throw new Error('Có lỗi xảy ra khi tìm kiếm');
       }
       
-      const data = await response.json();
-      setResults(data.results);
-      setHasSearched(true);
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      
+      if (!reader) {
+        throw new Error('Không thể đọc response stream');
+      }
+      
+      let buffer = '';
+      
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) break;
+        
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = JSON.parse(line.slice(6));
+            
+            if (data.message) {
+              setStreamMessages(prev => [...prev, data.message]);
+            } else if (data.result) {
+              const resultData = data.result;
+              
+              if (resultData.type === 'exact') {
+                const exactResults = resultData.chunks.map((chunk: any, idx: number) => ({
+                  id: `${resultData.bookCode}-${resultData.chapter}-${idx}`,
+                  score: 1,
+                  payload: {
+                    bookCode: resultData.bookCode,
+                    bookName: resultData.bookName,
+                    chapter: resultData.chapter,
+                    verseStart: chunk.verseStart,
+                    verseEnd: chunk.verseEnd,
+                    text: chunk.text,
+                  }
+                }));
+                setResults(exactResults);
+              } else {
+                setResults(resultData.results || []);
+              }
+              
+              setHasSearched(true);
+              setIsStreaming(false);
+            } else if (data.error) {
+              setError(data.error);
+              setIsStreaming(false);
+            }
+          }
+        }
+      }
       
     } catch (err: any) {
       setError(err.message || 'Có lỗi xảy ra, vui lòng thử lại');
+      setIsStreaming(false);
     } finally {
       setLoading(false);
     }
@@ -76,6 +133,16 @@ export default function HomePage() {
     return 'Có liên quan';
   };
 
+  // Tính progress dựa trên số message
+  const progress = streamMessages.length > 0 
+    ? Math.min((streamMessages.length / 5) * 100, 90) 
+    : 0;
+
+  // Lấy message cuối cùng để hiển thị
+  const currentMessage = streamMessages.length > 0 
+    ? streamMessages[streamMessages.length - 1] 
+    : '';
+
   return (
     <>
       <style dangerouslySetInnerHTML={{__html: `
@@ -90,7 +157,6 @@ export default function HomePage() {
           overflow-x: hidden;
         }
 
-        /* Background Watermark Cross */
         body::before {
           content: '';
           position: fixed;
@@ -229,9 +295,10 @@ export default function HomePage() {
           font-style: italic;
           transition: opacity 0.2s ease;
         }
+        
         .search-box:focus::placeholder {
-  opacity: 0;
-}
+          opacity: 0;
+        }
 
         .search-icon-left {
           position: absolute;
@@ -294,6 +361,165 @@ export default function HomePage() {
 
         @keyframes spin {
           to { transform: rotate(360deg); }
+        }
+
+        /* === ĐÂY LÀ PHẦN THAY ĐỔI === */
+        /* Streaming Container */
+        .streaming-container {
+          width: 100%;
+          max-width: 600px;
+          margin-top: 20px;
+          margin-bottom: 20px;
+          opacity: 0;
+          transform: translateY(-10px);
+          transition: all 0.4s ease;
+        }
+
+        .streaming-container.active {
+          opacity: 1;
+          transform: translateY(0);
+        }
+
+        .ai-loading-box {
+          background: linear-gradient(135deg, #FFF9E5 0%, #FFF3D6 100%);
+          border-radius: 16px;
+          border: 2px solid rgba(212, 175, 55, 0.4);
+          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+          padding: 24px;
+        }
+
+        .ai-header {
+          display: flex;
+          gap: 14px;
+          align-items: flex-start;
+          margin-bottom: 20px;
+        }
+
+        .ai-avatar {
+          width: 40px;
+          height: 40px;
+          background: linear-gradient(135deg, #D4AF37 0%, #E5C158 100%);
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+          box-shadow: 0 2px 8px rgba(212, 175, 55, 0.4);
+          animation: pulse 2s ease-in-out infinite;
+        }
+
+        .ai-avatar svg {
+          width: 22px;
+          height: 22px;
+          fill: white;
+          animation: rotate 3s linear infinite;
+        }
+
+        .ai-message-container {
+          flex: 1;
+          min-height: 50px;
+          position: relative;
+        }
+
+        .ai-message {
+          color: #654321;
+          font-size: 16px;
+          line-height: 1.6;
+          animation: fadeIn 0.5s ease;
+        }
+
+        .ai-progress-section {
+          margin-top: 20px;
+          padding-top: 20px;
+          border-top: 1px solid rgba(212, 175, 55, 0.2);
+        }
+
+        .ai-progress-label {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 10px;
+          font-size: 13px;
+          color: #8B6F47;
+        }
+
+        .ai-progress-text {
+          font-weight: 600;
+        }
+
+        .ai-progress-percent {
+          font-weight: 700;
+          color: #D4AF37;
+          font-size: 15px;
+        }
+
+        .ai-progress-bar-container {
+          height: 6px;
+          background: rgba(212, 175, 55, 0.2);
+          border-radius: 10px;
+          overflow: hidden;
+          position: relative;
+        }
+
+        .ai-progress-bar {
+          height: 100%;
+          background: linear-gradient(90deg, #D4AF37 0%, #E5C158 50%, #D4AF37 100%);
+          background-size: 200% 100%;
+          border-radius: 10px;
+          transition: width 0.5s ease;
+          animation: shimmer 1.5s infinite;
+        }
+
+        @keyframes pulse {
+          0%, 100% {
+            transform: scale(1);
+            box-shadow: 0 2px 8px rgba(212, 175, 55, 0.4);
+          }
+          50% {
+            transform: scale(1.05);
+            box-shadow: 0 4px 16px rgba(212, 175, 55, 0.6);
+          }
+        }
+
+        @keyframes rotate {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+            transform: translateY(-10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        @keyframes shimmer {
+          0% { background-position: -200% 0; }
+          100% { background-position: 200% 0; }
+        }
+
+        @media (max-width: 768px) {
+          .ai-loading-box {
+            padding: 20px;
+          }
+          
+          .ai-avatar {
+            width: 36px;
+            height: 36px;
+          }
+          
+          .ai-avatar svg {
+            width: 20px;
+            height: 20px;
+          }
+          
+          .ai-message {
+            font-size: 15px;
+          }
         }
 
         .results-section {
@@ -477,14 +703,12 @@ export default function HomePage() {
         }
       `}} />
 
-      {/* Decorative Corners */}
       <div className="corner-decoration top-left"></div>
       <div className="corner-decoration top-right"></div>
       <div className="corner-decoration bottom-left"></div>
       <div className="corner-decoration bottom-right"></div>
 
       <div className="home-container">
-        {/* Hero Section */}
         <section className="hero-section">
           <svg className="hero-cross" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
             <path d="M12 2C13.1 2 14 2.9 14 4V10H20C21.1 10 22 10.9 22 12S21.1 14 20 14H14V20C14 21.1 13.1 22 12 22S10 21.1 10 20V14H4C2.9 14 2 13.1 2 12S2.9 10 4 10H10V4C10 2.9 10.9 2 12 2Z" />
@@ -499,7 +723,6 @@ export default function HomePage() {
           </p>
         </section>
 
-        {/* Search Section */}
         <section className="search-section">
           <form onSubmit={handleSearch}>
             <div className="search-box-container">
@@ -533,12 +756,43 @@ export default function HomePage() {
           </form>
         </section>
 
-        {/* Error Message */}
+        {/* === ĐÂY LÀ UI MỚI - 1 Ô DUY NHẤT === */}
+        {isStreaming && streamMessages.length > 0 && (
+          <div className={`streaming-container ${isStreaming ? 'active' : ''}`}>
+            <div className="ai-loading-box">
+              <div className="ai-header">
+                <div className="ai-avatar">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M12 2C13.1 2 14 2.9 14 4V10H20C21.1 10 22 10.9 22 12S21.1 14 20 14H14V20C14 21.1 13.1 22 12 22S10 21.1 10 20V14H4C2.9 14 2 13.1 2 12S2.9 10 4 10H10V4C10 2.9 10.9 2 12 2Z"/>
+                  </svg>
+                </div>
+                <div className="ai-message-container">
+                  <div className="ai-message" key={currentMessage}>
+                    {currentMessage}
+                  </div>
+                </div>
+              </div>
+
+              <div className="ai-progress-section">
+                <div className="ai-progress-label">
+                  <span className="ai-progress-text">Đang tìm kiếm...</span>
+                  <span className="ai-progress-percent">{Math.round(progress)}%</span>
+                </div>
+                <div className="ai-progress-bar-container">
+                  <div 
+                    className="ai-progress-bar" 
+                    style={{ width: `${progress}%` }}
+                  ></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {error && (
           <div className="error-message">{error}</div>
         )}
 
-        {/* Results Section */}
         <section className={`results-section ${hasSearched ? 'show' : ''}`}>
           {results.length > 0 ? (
             <>
@@ -554,7 +808,6 @@ export default function HomePage() {
                     onClick={() => handleResultClick(result)}
                     style={{ animationDelay: `${index * 150}ms` }}
                   >
-                    
                     <div className="result-reference">
                       {result.payload.bookName} {result.payload.chapter}:
                       {result.payload.verseStart}

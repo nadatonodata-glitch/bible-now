@@ -56,7 +56,12 @@ export default function BookReader({
     setTimeout(() => {
       if (!measureRef.current) return;
 
-      const maxPageHeight = isMobile ? 500 : 600;
+      // Chiều cao tối đa cho content (trừ title + padding)
+      const maxPageHeight = isMobile 
+  ? Math.min(500, window.innerHeight * 0.85)
+  : Math.min(550, window.innerHeight * 0.85);
+      const titleHeight = 80; // Chiều cao dành cho title ở trang đầu
+      
       const pages: Verse[][] = [];
       let currentPageVerses: Verse[] = [];
       let currentHeight = 0;
@@ -65,23 +70,30 @@ export default function BookReader({
       
       chapterData.forEach((verse, index) => {
         const verseElement = verseElements[index] as HTMLElement;
-        const verseHeight = verseElement ? verseElement.offsetHeight + 8 : 48; // +8 cho margin
+        if (!verseElement) return;
+        
+        // Đo chiều cao THẬT của câu (bao gồm cả margin/padding)
+        const verseHeight = verseElement.offsetHeight + 8; // +8 cho gap
 
+        // Trang đầu tiên cần dành chỗ cho title
+        const availableHeight = (pages.length === 0 && currentPageVerses.length === 0) 
+          ? maxPageHeight - titleHeight 
+          : maxPageHeight;
 
-        if (pages.length === 0 && currentPageVerses.length === 0) {
-          currentHeight += 100;
-        }
-
-        if (currentHeight + verseHeight > maxPageHeight && currentPageVerses.length > 0) {
+        // Kiểm tra nếu thêm câu này vào sẽ vượt quá chiều cao
+        if (currentHeight + verseHeight > availableHeight && currentPageVerses.length > 0) {
+          // Lưu trang hiện tại và bắt đầu trang mới
           pages.push([...currentPageVerses]);
           currentPageVerses = [verse];
           currentHeight = verseHeight;
         } else {
+          // Thêm câu vào trang hiện tại
           currentPageVerses.push(verse);
           currentHeight += verseHeight;
         }
       });
 
+      // Thêm trang cuối cùng
       if (currentPageVerses.length > 0) {
         pages.push(currentPageVerses);
       }
@@ -90,14 +102,13 @@ export default function BookReader({
       setTotalPages(pages.length);
       setCurrentPage(1);
       setIsMeasuring(false);
-    }, 100);
+    }, 150);
   }, [bookCode, chapter, isMobile]);
 
   // Auto scroll to highlighted verse
   useEffect(() => {
     if (!highlightStart || pagesData.length === 0) return;
     
-    // Tìm trang chứa verse được highlight
     let targetPage = 1;
     for (let i = 0; i < pagesData.length; i++) {
       const pageVerses = pagesData[i];
@@ -112,7 +123,6 @@ export default function BookReader({
       }
     }
     
-    // Delay nhỏ để animation mượt hơn
     setTimeout(() => {
       setCurrentPage(targetPage);
     }, 300);
@@ -237,12 +247,13 @@ export default function BookReader({
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [currentPage, bookCode, chapter, totalPages])
+  
   useEffect(() => {
-  window.scrollTo({
-    top: 0,
-    behavior: 'smooth'
-  });
-}, [currentPage, bookCode, chapter]);
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
+  }, [currentPage, bookCode, chapter]);
 
   return (
     <>
@@ -251,7 +262,7 @@ export default function BookReader({
           position: relative;
           width: 90%;
           max-width: 1200px;
-          height: 85%;
+          height: min(650px, 85vh);
           perspective: 2000px;
           overflow: hidden;
         }
@@ -269,7 +280,8 @@ export default function BookReader({
           position: relative;
           width: ${100/totalPages}%;
           height: 100%;
-          padding: 4% 5%;
+          min-height: min-height: min(650px, 85vh);
+          padding: 40px 50px;
           box-sizing: border-box;
           flex-shrink: 0;
         }
@@ -319,8 +331,8 @@ export default function BookReader({
         .chapter-title {
           text-align: center;
           font-family: 'Cinzel Decorative', serif;
-          font-size: 2em;
-          margin: 0 0 0.5em 0;
+          font-size: 1.6em;
+          margin: 0 0 0.4em 0;
           position: relative;
           z-index: 2;
           letter-spacing: 2px;
@@ -332,13 +344,13 @@ export default function BookReader({
           display: block;
           width: 60%;
           height: 2px;
-          margin: 0.5em auto 0;
+          margin: 0.4em auto 0;
           background: linear-gradient(to right, transparent, currentColor 20%, currentColor 80%, transparent);
         }
 
         .verse-text {
-          font-size: 1.15em;
-          line-height: 1.8;
+          font-size: 1.1em;
+          line-height: 1.75;
           text-align: justify;
           position: relative;
           z-index: 2;
@@ -355,33 +367,21 @@ export default function BookReader({
           color: #D4AF37;
         }
 
-        /* Highlight styles */
         .verse-highlighted {
-          background: linear-gradient(120deg, rgba(255, 235, 59, 0.3) 0%, rgba(255, 193, 7, 0.2) 100%);
-          padding: 4px 8px;
-          margin: -4px -8px;
-          border-radius: 4px;
-          border-left: 3px solid #D4AF37;
-          box-shadow: 0 0 12px rgba(212, 175, 55, 0.3);
-          animation: highlightPulse 2s ease-in-out;
+          background: rgba(255, 235, 59, 0.25);
         }
-
-        @keyframes highlightPulse {
-          0%, 100% {
-            box-shadow: 0 0 12px rgba(212, 175, 55, 0.3);
-          }
-          50% {
-            box-shadow: 0 0 20px rgba(212, 175, 55, 0.5);
-          }
+        
+        .verse-highlighted .verse-number {
+          background: transparent;
         }
 
         .illuminated-letter {
           float: left;
-          font-size: 4em;
-          line-height: 0.8;
+          font-size: 3.5em;
+          line-height: 0.85;
           font-family: 'Cinzel Decorative', serif;
           font-weight: 700;
-          margin: 0.1em 0.15em 0 0;
+          margin: 0.05em 0.12em 0 0;
           text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
           color: #D4AF37;
         }
@@ -476,18 +476,21 @@ export default function BookReader({
         }
 
         .page-indicator {
-          position: absolute;
+          position: fixed;
           bottom: 20px;
           left: 50%;
           transform: translateX(-50%);
           display: flex;
           gap: 10px;
           z-index: 20;
+          max-width: 80%;
+          flex-wrap: wrap;
+          justify-content: center;
         }
 
         .page-dot {
-          width: 12px;
-          height: 12px;
+          width: 10px;
+          height: 10px;
           border-radius: 50%;
           background: rgba(139, 69, 19, 0.3);
           cursor: pointer;
@@ -496,25 +499,36 @@ export default function BookReader({
 
         .page-dot.active {
           background: rgba(139, 69, 19, 0.8);
-          transform: scale(1.2);
+          transform: scale(1.3);
+        }
+
+        .temp-verse {
+          margin-bottom: 4px;
         }
 
         @media (max-width: 768px) {
           .book-container {
             width: 95%;
-            height: 90%;
+            height: min(550px, 85vh);
           }
           
           .page {
-            padding: 2% 2.5%;
+            padding: 30px 35px;
+            min-height: min(550px, 85vh);
           }
           
           .chapter-title {
-            font-size: 1.5em;
+            font-size: 1.3em;
+            margin: 0 0 0.3em 0;
           }
           
           .verse-text {
             font-size: 1em;
+            line-height: 1.7;
+          }
+          
+          .illuminated-letter {
+            font-size: 3em;
           }
           
           .corner-decoration {
@@ -525,17 +539,26 @@ export default function BookReader({
           .navigation {
             display: none;
           }
+          
+          .page-dot {
+            width: 8px;
+            height: 8px;
+          }
         }
       `}} />
 
-      {/* Div đo trước khi render */}
       {isMeasuring && (
         <div 
           ref={measureRef} 
           style={{ 
             position: 'absolute', 
-            visibility: 'hidden', 
-            width: '100%',
+            visibility: 'hidden',
+            top: 0,
+            left: 0,
+            width: isMobile ? '95%' : '90%',
+            maxWidth: '1200px',
+            padding: isMobile ? '30px 35px' : '40px 50px',
+            boxSizing: 'border-box',
             pointerEvents: 'none'
           }}
         >
@@ -555,15 +578,16 @@ export default function BookReader({
       <button className="navigation nav-next" onClick={nextPage}>›</button>
 
       <div className="book-container">
-        <div className="page-indicator">
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-            <div
-              key={page}
-              className={`page-dot ${currentPage === page ? 'active' : ''}`}
-              onClick={() => goToPage(page)}
-            />
-          ))}
-        </div>
+  <div className="page-indicator">
+    {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+      <div
+        key={page}
+        className={`page-dot ${currentPage === page ? 'active' : ''}`}
+        onClick={() => goToPage(page)}
+      />
+    ))}
+  </div>
+
 
         <div className="book">
           {pagesData.map((pageVerses, pageIndex) => (
