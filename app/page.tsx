@@ -715,11 +715,11 @@ export default function HomePage() {
           </svg>
           
           <h1 className="hero-title">
-            Tìm Lời Chúa cho tâm tư của bạn
+            Hãy để tôi tìm Lời Chúa cho bạn !
           </h1>
           
           <p className="hero-subtitle">
-            Gõ câu hỏi, cảm xúc, hoặc tình huống - chúng tôi sẽ tìm câu Kinh Thánh phù hợp
+            Nhập vào đây câu hỏi hoặc điều bạn muốn tìm !
           </p>
         </section>
 
@@ -735,7 +735,7 @@ export default function HomePage() {
                 className="search-box"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Khi tôi cô đơn... Làm sao vượt khó khăn... Tình yêu là gì..."
+                placeholder="Làm sao vượt khó khăn... Tình yêu là gì..."
                 disabled={loading}
               />
               
