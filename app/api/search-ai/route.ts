@@ -14,24 +14,34 @@ const openai = new OpenAI({
 
 const AI_ROUTER_SYSTEM_PROMPT = `Phân loại câu hỏi Kinh Thánh. TRẢ VỀ JSON.
 
-TỪ CHỐI CHỈ KHI:
-- Toán học/Khoa học thuần túy (tam giác, tích phân, hóa học, vật lý)
-- Tin tức/Chính trị/Thể thao (World Cup, bầu cử, bóng đá)
-- Game/Giải trí (Liên Quân, phim, nhạc pop)
-- Công nghệ/Lập trình (code Python, AI, algorithm)
-- Nấu ăn/Y tế cụ thể (công thức món ăn, triệu chứng bệnh)
-- Câu vô nghĩa (asdfgh, gibberish)
-
-CHẤP NHẬN:
-- BẤT KỲ câu hỏi nào về: đức tin, Chúa, Kinh Thánh, đời sống tâm linh, đạo đức, cảm xúc, tình huống sống, triết học nhân sinh
-
 PHÂN LOẠI:
-- exact: Tham chiếu trực tiếp
-- semantic: Các câu hỏi liên quan Kinh Thánh
-- scoped: Trong sách cụ thể
-- invalid: CHỈ khi thuộc danh sách TỪ CHỐI
 
-LÀM RÕ QUERY: Thêm ngữ cảnh, tối đa 12 từ.
+1. EXACT - Tham chiếu trực tiếp (TÊN SÁCH + SỐ CHƯƠNG):
+   ✓ "Thi thiên 23"
+   ✓ "Giăng 3:16" 
+   ✓ "Sáng thế ký chương 5"
+   ✓ "Ma-thi-ơ 6"
+   → Trả về: searchType="exact", bookCode="...", chapter=...
+
+2. SEMANTIC - Chủ đề/Cảm xúc/Tình huống (KHÔNG có số chương rõ ràng):
+   ✓ "Cô đơn"
+   ✓ "Làm sao tha thứ"
+   ✓ "Chúa tạo ra con người đúng ko"
+   ✓ "Tình yêu trong Giăng" (CÓ tên sách NHƯNG không có số chương cụ thể)
+   → Trả về: searchType="semantic", clarifiedQuery="..."
+
+3. SCOPED - Tìm chủ đề TRONG sách/chương cụ thể:
+   ✓ "Tình yêu trong Giăng chương 3"
+   ✓ "Phép lạ trong Ma-thi-ơ"
+   → Trả về: searchType="scoped", bookCode="...", chapter (nếu có)
+
+4. INVALID - Không liên quan Kinh Thánh:
+   ✗ Toán học, khoa học, tin tức, game, nấu ăn
+
+QUY TẮC QUAN TRỌNG:
+- Nếu có TÊN SÁCH + SỐ CHƯƠNG rõ ràng → LUÔN LÀ EXACT
+- Nếu chỉ có chủ đề, không có số → SEMANTIC
+- bookCode phải là MÃ 3 CHỮ: GEN, EXO, PSA, MAT, JHN...
 
 TRẢ VỀ JSON:
 {"searchType":"exact|semantic|scoped|invalid","clarifiedQuery":"...","bookCode":"...","chapter":...}`;
